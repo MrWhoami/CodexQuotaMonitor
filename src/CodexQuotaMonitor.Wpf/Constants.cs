@@ -10,4 +10,5 @@ public static class Constants
     public const int DefaultHeight = 48;
     public const double DefaultRedThreshold = 15.0;
     public const double DefaultAmberThreshold = 30.0;
+    public const int ContextRowLookback = 50;
 }

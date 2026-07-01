@@ -4,6 +4,7 @@ using CodexQuotaMonitor.Wpf;
 var tests = new (string Name, Action Body)[]
 {
     ("quota JSON-RPC response parsing", TestQuotaParsing),
+    ("context usage row parsing", TestContextParsing),
     ("settings defaults, JSON load, CLI override, corrupt fallback", TestSettings),
     ("formatting helpers", TestFormatting),
     ("taskbar placement", TestTaskbarPlacement),
@@ -56,6 +57,24 @@ static void TestQuotaParsing()
     Equal("test-limit", snapshot.LimitId, "limit id");
     Near(42.75, snapshot.Primary!.RemainingPercent!.Value, 0.001, "primary remaining");
     Near(79.0, snapshot.Secondary!.RemainingPercent!.Value, 0.001, "secondary remaining");
+}
+
+static void TestContextParsing()
+{
+    var snapshot = ContextReader.TryParseContextRow(
+        "event.kind=response.completed model=gpt-5 input_token_count=100 cached_token_count=20 output_token_count=5 reasoning_token_count=3 event.timestamp=2026-07-01T08:00:00Z conversation.id=abc",
+        new Dictionary<string, ModelWindow>
+        {
+            ["gpt-5"] = new(200, 50)
+        });
+
+    Equal(null, snapshot!.Error, "context error");
+    Equal("gpt-5", snapshot.Model, "context model");
+    Equal(100, snapshot.InputTokens, "context input tokens");
+    Equal(200, snapshot.ContextWindow, "context window");
+    Equal(100, snapshot.EffectiveWindow, "context effective window");
+    Near(100.0, snapshot.UsedPercent!.Value, 0.001, "context used percent");
+    Near(0.0, snapshot.RemainingPercent!.Value, 0.001, "context remaining percent");
 }
 
 static void TestSettings()
