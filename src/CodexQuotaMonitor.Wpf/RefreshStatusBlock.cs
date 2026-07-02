@@ -13,7 +13,6 @@ public sealed class RefreshStatusBlock : FrameworkElement
     private readonly Brush _background;
     private readonly Pen _borderPen;
     private DateTimeOffset? _refreshedAt;
-    private DateTimeOffset _currentTime = DateTimeOffset.Now;
     private string _status = "WAIT";
     private System.Windows.Media.Color _accentColor = Formatting.ColorFromHex("#91A0B5");
 
@@ -26,10 +25,9 @@ public sealed class RefreshStatusBlock : FrameworkElement
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
     }
 
-    public void SetStatus(DateTimeOffset? refreshedAt, DateTimeOffset currentTime, string status, string accentHex)
+    public void SetStatus(DateTimeOffset? refreshedAt, string status, string accentHex)
     {
         _refreshedAt = refreshedAt;
-        _currentTime = currentTime;
         _status = status;
         _accentColor = Formatting.ColorFromHex(accentHex);
         InvalidateVisual();
@@ -46,10 +44,16 @@ public sealed class RefreshStatusBlock : FrameworkElement
 
         var accent = new SolidColorBrush(_accentColor);
         var soft = new SolidColorBrush(Formatting.ColorFromHex("#D8E3F0"));
-        var muted = new SolidColorBrush(Formatting.ColorFromHex("#91A0B5"));
 
-        DrawText(dc, "REF", 6, 3.5, 7, FontWeights.Bold, soft, dpi);
-        DrawTimePair(dc, FormatTime(_refreshedAt), FormatTime(_currentTime), width, height, accent, soft, muted, dpi);
+        DrawText(dc, "LAST REF", 6, 3.5, 7, FontWeights.Bold, soft, dpi);
+        DrawCenteredText(
+            dc,
+            FormatTime(_refreshedAt),
+            new Rect(0, 14.5, width, 14.0),
+            9.4,
+            FontWeights.SemiBold,
+            accent,
+            dpi);
 
         if (!string.IsNullOrWhiteSpace(_status))
         {
@@ -67,31 +71,6 @@ public sealed class RefreshStatusBlock : FrameworkElement
     private static string FormatTime(DateTimeOffset? value)
     {
         return value.HasValue ? value.Value.ToString("HH:mm", CultureInfo.CurrentCulture) : "--:--";
-    }
-
-    private static void DrawTimePair(
-        DrawingContext dc,
-        string refreshTime,
-        string currentTime,
-        double width,
-        double height,
-        Brush refreshBrush,
-        Brush currentBrush,
-        Brush separatorBrush,
-        double pixelsPerDip)
-    {
-        var refresh = MakeText(refreshTime, 9.4, FontWeights.SemiBold, refreshBrush, pixelsPerDip);
-        var slash = MakeText("/", 8.6, FontWeights.Normal, separatorBrush, pixelsPerDip);
-        var current = MakeText(currentTime, 9.4, FontWeights.SemiBold, currentBrush, pixelsPerDip);
-        var totalWidth = refresh.WidthIncludingTrailingWhitespace + slash.WidthIncludingTrailingWhitespace + current.WidthIncludingTrailingWhitespace;
-        var x = Math.Max(3.0, (width - totalWidth) / 2.0);
-        var y = Math.Max(14.5, height / 2.0 - 6.0);
-
-        dc.DrawText(refresh, new Point(x, y));
-        x += refresh.WidthIncludingTrailingWhitespace;
-        dc.DrawText(slash, new Point(x, y + 0.8));
-        x += slash.WidthIncludingTrailingWhitespace;
-        dc.DrawText(current, new Point(x, y));
     }
 
     private static void DrawText(

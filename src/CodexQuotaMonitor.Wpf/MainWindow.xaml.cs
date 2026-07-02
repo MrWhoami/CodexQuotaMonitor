@@ -302,34 +302,33 @@ public partial class MainWindow : Window
 
     private void RenderRefreshStatus()
     {
-        var now = DateTimeOffset.Now;
         if (_quotaInFlight)
         {
-            _refreshStatus.SetStatus(_quotaLastSuccessAt, now, "SYNC", "#F2BD4D");
+            _refreshStatus.SetStatus(_quotaLastSuccessAt, "SYNC", "#F2BD4D");
             return;
         }
         if (_lastQuota is null)
         {
-            _refreshStatus.SetStatus(null, now, "WAIT", "#91A0B5");
+            _refreshStatus.SetStatus(null, "WAIT", "#91A0B5");
             return;
         }
         if (_quotaLastError is not null && _quotaLastSuccessAt.HasValue)
         {
-            _refreshStatus.SetStatus(_quotaLastSuccessAt, now, "OLD", "#F2BD4D");
+            _refreshStatus.SetStatus(_quotaLastSuccessAt, "OLD", "#F2BD4D");
             return;
         }
         if (_lastQuota.Error is not null && !_quotaLastSuccessAt.HasValue)
         {
-            _refreshStatus.SetStatus(null, now, "ERR", "#FF6678");
+            _refreshStatus.SetStatus(null, "ERR", "#FF6678");
             return;
         }
         if (IsStale(_quotaLastSuccessAt, _settings.QuotaInterval))
         {
-            _refreshStatus.SetStatus(_quotaLastSuccessAt, now, "STALE", "#F2BD4D");
+            _refreshStatus.SetStatus(_quotaLastSuccessAt, "STALE", "#F2BD4D");
             return;
         }
 
-        _refreshStatus.SetStatus(_quotaLastSuccessAt, now, "", "#28D989");
+        _refreshStatus.SetStatus(_quotaLastSuccessAt, "", "#28D989");
     }
 
     private void UpdateTitle()
