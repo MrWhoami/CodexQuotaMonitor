@@ -17,11 +17,22 @@
 - `WK`：Codex 返回的一周额度窗口，本组件显示该窗口的剩余额度百分比，并在下方显示距离重置的大致时间。
 - `REF`：刷新状态区，显示 `上次成功刷新时间 / 当前时间`。正常状态下只显示时间；读取中、等待首次读数、旧数据或错误时，会在底部显示 `SYNC`、`WAIT`、`OLD`、`ERR` 或 `STALE`。
 - `5H` 和 `WK` 使用圆形向量 gauge，以绿色、黄色、红色提示余量状态；阈值可在 `settings.json` 中调整。
-- 支持单实例、托盘图标、手动刷新、贴靠任务栏左侧、刷新间隔调整、本地图标、旧数据和错误状态提示。
+- 支持单实例、托盘图标、手动刷新、贴靠任务栏左侧、固定/动态刷新间隔、本地图标、旧数据和错误状态提示。
 
 ![原生版浮窗示例](assets/gui-overview.png)
 
-窗口右键菜单和托盘右键菜单使用同一组操作：`Refresh now` 立即刷新；`Snap to taskbar left` 重新贴靠任务栏左侧；`Quota interval` 调整额度刷新间隔；`Exit` 退出程序。
+窗口右键菜单和托盘右键菜单使用同一组操作：`Refresh now` 立即刷新；`Snap to taskbar left` 重新贴靠任务栏左侧；`Quota interval` 调整额度刷新间隔，支持固定间隔和 `Dynamic` 动态模式；`Exit` 退出程序。
+
+`Dynamic` 动态刷新规则：
+
+- 到达 Codex 返回的额度窗口重置时间时立即刷新。
+- 初始刷新间隔为 3 分钟。
+- 连续 3 次刷新后用量没有变化时，刷新间隔延长为 5 分钟。
+- 连续 5 次刷新后用量没有变化时，刷新间隔延长为 10 分钟。
+- 刷新后用量发生变化时，刷新间隔恢复为 3 分钟。
+- 连续 5 次刷新后用量都有变化时，刷新间隔缩短为 1 分钟。
+- 当 `5H` 剩余额度低于 30% 时，默认刷新间隔临时改为 1 分钟；下一次用量更新后恢复为 3 分钟。
+- 手动 `Refresh now` 也会计入连续变化或连续不变次数。
 
 ![原生版右键菜单](assets/right-click-menu.png)
 
@@ -105,6 +116,7 @@ copy settings.example.json settings.json
 ```json
 {
   "quota_interval": 180,
+  "quota_interval_dynamic": false,
   "no_tray": false,
   "window_width": 260,
   "red_threshold": 15.0,

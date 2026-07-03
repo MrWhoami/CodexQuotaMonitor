@@ -1,5 +1,6 @@
 {
   "quota_interval": 180,
+  "quota_interval_dynamic": false,
   "no_tray": false,
   "window_width": 260,
   "red_threshold": 15.0,

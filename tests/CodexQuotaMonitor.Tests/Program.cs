@@ -6,6 +6,7 @@ var tests = new (string Name, Action Body)[]
     ("quota JSON-RPC response parsing", TestQuotaParsing),
     ("context usage row parsing", TestContextParsing),
     ("settings defaults, JSON load, CLI override, corrupt fallback", TestSettings),
+    ("dynamic quota refresh scheduler", TestDynamicQuotaRefreshScheduler),
     ("formatting helpers", TestFormatting),
     ("taskbar placement", TestTaskbarPlacement),
     ("argument handling", TestArguments)
@@ -90,6 +91,7 @@ static void TestSettings()
         File.WriteAllText(path, """
             {
               "quota_interval": 60,
+              "quota_interval_dynamic": true,
               "no_tray": true,
               "window_width": 320,
               "red_threshold": 10,
@@ -98,11 +100,13 @@ static void TestSettings()
             """);
         var loaded = SettingsStore.Load(path);
         Equal(60, loaded.QuotaInterval, "loaded quota interval");
+        Equal(true, loaded.QuotaIntervalDynamic, "loaded dynamic quota interval");
         Equal(true, loaded.NoTray, "loaded no tray");
 
         var cli = CliOptions.Parse(["--quota-interval", "300", "--tray"]);
         var merged = SettingsStore.ApplyCliOverrides(loaded, cli);
         Equal(300, merged.QuotaInterval, "cli quota override");
+        Equal(false, merged.QuotaIntervalDynamic, "cli quota interval disables dynamic");
         Equal(false, merged.NoTray, "cli tray override");
 
         File.WriteAllText(path, "{ broken json");
@@ -113,6 +117,47 @@ static void TestSettings()
     {
         Directory.Delete(tempDir, recursive: true);
     }
+}
+
+static void TestDynamicQuotaRefreshScheduler()
+{
+    var scheduler = new DynamicQuotaRefreshScheduler();
+    var unchanged = Quota(40, 10);
+
+    scheduler.Register(unchanged);
+    Equal(180, scheduler.CurrentIntervalSeconds, "initial dynamic interval");
+
+    scheduler.Register(unchanged);
+    scheduler.Register(unchanged);
+    Equal(180, scheduler.CurrentIntervalSeconds, "two unchanged interval");
+
+    scheduler.Register(unchanged);
+    Equal(300, scheduler.CurrentIntervalSeconds, "three unchanged interval");
+
+    scheduler.Register(unchanged);
+    scheduler.Register(unchanged);
+    Equal(600, scheduler.CurrentIntervalSeconds, "five unchanged interval");
+
+    scheduler.Register(Quota(41, 10));
+    Equal(180, scheduler.CurrentIntervalSeconds, "changed resets interval");
+
+    for (var used = 42; used <= 46; used++)
+    {
+        scheduler.Register(Quota(used, 10));
+    }
+    Equal(60, scheduler.CurrentIntervalSeconds, "five changed interval");
+
+    scheduler.Reset();
+    scheduler.Register(Quota(80, 10));
+    Equal(60, scheduler.CurrentIntervalSeconds, "low primary remaining interval");
+
+    scheduler.Register(Quota(81, 10));
+    Equal(180, scheduler.CurrentIntervalSeconds, "low primary remaining restores after update");
+
+    var now = DateTimeOffset.FromUnixTimeSeconds(4_102_444_000);
+    var reset = now.AddMinutes(2);
+    var next = scheduler.NextRefreshAt(now, Quota(50, 20, reset.ToUnixTimeSeconds()));
+    Equal(reset.ToUniversalTime(), next.ToUniversalTime(), "reset time preempts interval");
 }
 
 static void TestFormatting()
@@ -157,6 +202,13 @@ static void TestArguments()
 
     var tray = CliOptions.Parse(["--tray"]);
     Equal(false, tray.NoTray, "tray override");
+}
+
+static QuotaSnapshot Quota(double primaryUsed, double secondaryUsed, long? primaryResetsAt = null)
+{
+    return new QuotaSnapshot(
+        Primary: new LimitWindow("5h", primaryUsed, 100.0 - primaryUsed, 300, primaryResetsAt),
+        Secondary: new LimitWindow("Week", secondaryUsed, 100.0 - secondaryUsed, 10080));
 }
 
 static void Equal<T>(T expected, T actual, string label)

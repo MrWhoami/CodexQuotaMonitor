@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private readonly RefreshStatusBlock _refreshStatus;
     private readonly Forms.ContextMenuStrip _menu = new();
     private readonly List<Forms.ToolStripMenuItem> _quotaIntervalItems = new();
+    private readonly DynamicQuotaRefreshScheduler _dynamicQuotaRefresh = new();
     private Forms.NotifyIcon? _notifyIcon;
     private System.Drawing.Icon? _trayIcon;
     private AppSettings _settings;
@@ -100,6 +101,11 @@ public partial class MainWindow : Window
         _menu.Items.Add(new Forms.ToolStripSeparator());
 
         var quotaMenu = new Forms.ToolStripMenuItem("Quota interval");
+        var dynamicItem = new Forms.ToolStripMenuItem("Dynamic") { Tag = "dynamic", CheckOnClick = false };
+        dynamicItem.Click += (_, _) => SetDynamicQuotaInterval();
+        quotaMenu.DropDownItems.Add(dynamicItem);
+        _quotaIntervalItems.Add(dynamicItem);
+        quotaMenu.DropDownItems.Add(new Forms.ToolStripSeparator());
         foreach (var (label, seconds) in new[] { ("1 min", 60), ("3 min", 180), ("5 min", 300), ("10 min", 600), ("15 min", 900) })
         {
             var item = new Forms.ToolStripMenuItem(label) { Tag = seconds, CheckOnClick = false };
@@ -207,7 +213,7 @@ public partial class MainWindow : Window
 
     private void RefreshNow()
     {
-        _nextQuotaAt = DateTimeOffset.Now.AddSeconds(_settings.QuotaInterval);
+        ScheduleNextQuotaRefresh(DateTimeOffset.Now);
         StartQuotaRefresh();
     }
 
@@ -216,7 +222,7 @@ public partial class MainWindow : Window
         var now = DateTimeOffset.Now;
         if (now >= _nextQuotaAt)
         {
-            _nextQuotaAt = now.AddSeconds(_settings.QuotaInterval);
+            ScheduleNextQuotaRefresh(now);
             StartQuotaRefresh();
         }
         Render();
@@ -258,15 +264,21 @@ public partial class MainWindow : Window
         }
         else
         {
+            _dynamicQuotaRefresh.Register(value);
             _lastQuota = value;
             _quotaLastError = null;
             _quotaLastSuccessAt = value.UpdatedAt ?? DateTimeOffset.Now;
         }
 
+        if (_settings.QuotaIntervalDynamic)
+        {
+            ScheduleNextQuotaRefresh(DateTimeOffset.Now);
+        }
+
         if (_quotaPendingRefresh)
         {
             _quotaPendingRefresh = false;
-            _nextQuotaAt = DateTimeOffset.Now.AddSeconds(_settings.QuotaInterval);
+            ScheduleNextQuotaRefresh(DateTimeOffset.Now);
             StartQuotaRefresh(false);
         }
         Render();
@@ -322,7 +334,7 @@ public partial class MainWindow : Window
             _refreshStatus.SetStatus(null, "ERR", "#FF6678");
             return;
         }
-        if (IsStale(_quotaLastSuccessAt, _settings.QuotaInterval))
+        if (IsStale(_quotaLastSuccessAt, CurrentQuotaIntervalSeconds()))
         {
             _refreshStatus.SetStatus(_quotaLastSuccessAt, "STALE", "#F2BD4D");
             return;
@@ -337,11 +349,14 @@ public partial class MainWindow : Window
         var parts = new List<string>();
         if (_quotaInFlight) parts.Add("quota reading");
         if (_quotaPendingRefresh) parts.Add("quota pending");
-        if (IsStale(_quotaLastSuccessAt, _settings.QuotaInterval)) parts.Add("quota stale");
+        if (IsStale(_quotaLastSuccessAt, CurrentQuotaIntervalSeconds())) parts.Add("quota stale");
         if (_quotaLastError is not null) parts.Add("quota last error");
         if (parts.Count == 0) parts.Add("quota ok");
 
-        Title = $"{Constants.WindowTitlePrefix} | updated {stamp} | quota {_settings.QuotaInterval}s | {string.Join(" | ", parts)}";
+        var interval = _settings.QuotaIntervalDynamic
+            ? $"dynamic {_dynamicQuotaRefresh.CurrentIntervalSeconds}s"
+            : $"{_settings.QuotaInterval}s";
+        Title = $"{Constants.WindowTitlePrefix} | updated {stamp} | quota {interval} | {string.Join(" | ", parts)}";
         if (_notifyIcon is not null)
         {
             _notifyIcon.Text = Formatting.Truncate(Title, 120);
@@ -361,9 +376,26 @@ public partial class MainWindow : Window
     private void SetQuotaInterval(int seconds)
     {
         _settings.QuotaInterval = seconds;
+        _settings.QuotaIntervalDynamic = false;
         _settings.Normalize();
         SettingsStore.Save(_paths.SettingsPath, _settings, _logger);
-        _nextQuotaAt = DateTimeOffset.Now.AddSeconds(_settings.QuotaInterval);
+        ScheduleNextQuotaRefresh(DateTimeOffset.Now);
+        UpdateMenuChecks();
+        UpdateTitle();
+    }
+
+    private void SetDynamicQuotaInterval()
+    {
+        _settings.QuotaIntervalDynamic = true;
+        _dynamicQuotaRefresh.Reset();
+        // Seed dynamic mode from the last successful read so switching modes does not wait for another poll.
+        if (_lastQuota?.Error is null && _lastQuota is not null)
+        {
+            _dynamicQuotaRefresh.Register(_lastQuota);
+        }
+        _settings.Normalize();
+        SettingsStore.Save(_paths.SettingsPath, _settings, _logger);
+        ScheduleNextQuotaRefresh(DateTimeOffset.Now);
         UpdateMenuChecks();
         UpdateTitle();
     }
@@ -372,8 +404,28 @@ public partial class MainWindow : Window
     {
         foreach (var item in _quotaIntervalItems)
         {
-            item.Checked = item.Tag is int seconds && seconds == _settings.QuotaInterval;
+            item.Checked = item.Tag switch
+            {
+                string value when value == "dynamic" => _settings.QuotaIntervalDynamic,
+                int seconds => !_settings.QuotaIntervalDynamic && seconds == _settings.QuotaInterval,
+                _ => false
+            };
         }
+    }
+
+    private int CurrentQuotaIntervalSeconds()
+    {
+        return _settings.QuotaIntervalDynamic
+            ? _dynamicQuotaRefresh.CurrentIntervalSeconds
+            : _settings.QuotaInterval;
+    }
+
+    private void ScheduleNextQuotaRefresh(DateTimeOffset now)
+    {
+        // Dynamic mode may schedule earlier than the interval when a quota window reset is imminent.
+        _nextQuotaAt = _settings.QuotaIntervalDynamic
+            ? _dynamicQuotaRefresh.NextRefreshAt(now, _lastQuota)
+            : now.AddSeconds(_settings.QuotaInterval);
     }
 
     private void ForceTopmost()

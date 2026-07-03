@@ -8,6 +8,9 @@ public sealed class AppSettings
     [JsonPropertyName("quota_interval")]
     public int QuotaInterval { get; set; } = Constants.DefaultQuotaIntervalSeconds;
 
+    [JsonPropertyName("quota_interval_dynamic")]
+    public bool QuotaIntervalDynamic { get; set; }
+
     [JsonPropertyName("no_tray")]
     public bool NoTray { get; set; }
 
@@ -23,6 +26,7 @@ public sealed class AppSettings
     public AppSettings Clone() => new()
     {
         QuotaInterval = QuotaInterval,
+        QuotaIntervalDynamic = QuotaIntervalDynamic,
         NoTray = NoTray,
         WindowWidth = WindowWidth,
         RedThreshold = RedThreshold,
@@ -91,6 +95,7 @@ public static class SettingsStore
         if (options.QuotaInterval.HasValue)
         {
             merged.QuotaInterval = options.QuotaInterval.Value;
+            merged.QuotaIntervalDynamic = false;
         }
         if (options.NoTray.HasValue)
         {

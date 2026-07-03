@@ -115,6 +115,7 @@ public partial class App : System.Windows.Application
         Console.WriteLine($"codex_home={codexHome}");
         Console.WriteLine($"codex_exe={(string.IsNullOrWhiteSpace(codexExe) ? "not found" : codexExe)}");
         Console.WriteLine($"quota_interval={settings.QuotaInterval}");
+        Console.WriteLine($"quota_interval_dynamic={settings.QuotaIntervalDynamic}");
         Console.WriteLine($"tray={(!settings.NoTray)}");
 
         if (NativeMethods.TryGetTaskbarRect(out var edge, out var rect))
