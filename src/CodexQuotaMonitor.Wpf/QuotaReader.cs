@@ -7,12 +7,14 @@ namespace CodexQuotaMonitor.Wpf;
 public sealed class QuotaReader
 {
     private readonly string _codexHome;
-    private readonly string? _codexExe;
+    private readonly string? _configuredCodexExe;
+    private string? _codexExe;
     private readonly SimpleLogger _logger;
 
     public QuotaReader(string codexHome, string? codexExe, SimpleLogger logger)
     {
         _codexHome = codexHome;
+        _configuredCodexExe = codexExe;
         _codexExe = CodexExeFinder.Find(codexExe);
         _logger = logger;
     }
@@ -21,7 +23,8 @@ public sealed class QuotaReader
 
     public async Task<QuotaSnapshot> ReadAsync(CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_codexExe))
+        var codexExe = ResolveCodexExe();
+        if (string.IsNullOrWhiteSpace(codexExe))
         {
             return new QuotaSnapshot(Error: "codex.exe not found", UpdatedAt: DateTimeOffset.Now);
         }
@@ -61,7 +64,7 @@ public sealed class QuotaReader
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = _codexExe!,
+            FileName = ResolveCodexExe()!,
             UseShellExecute = false,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
@@ -96,6 +99,22 @@ public sealed class QuotaReader
         {
             StopProcess(process);
         }
+    }
+
+    private string? ResolveCodexExe()
+    {
+        if (!string.IsNullOrWhiteSpace(_codexExe) && File.Exists(_codexExe))
+        {
+            return _codexExe;
+        }
+
+        var previous = _codexExe;
+        _codexExe = CodexExeFinder.Find(_configuredCodexExe);
+        if (!string.Equals(previous, _codexExe, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.Info($"codex.exe rediscovered: {_codexExe ?? "not found"}");
+        }
+        return _codexExe;
     }
 
     private static async Task SendAsync(Process process, int id, string method, object? parameters, CancellationToken cancellationToken)
