@@ -11,7 +11,6 @@ public sealed class DynamicQuotaRefreshScheduler
     private UsageSignature? _lastUsage;
     private int _unchangedCount;
     private int _changedCount;
-    private bool _lowUsageFastMode;
 
     public int CurrentIntervalSeconds { get; private set; } = DefaultSeconds;
 
@@ -23,7 +22,6 @@ public sealed class DynamicQuotaRefreshScheduler
         _lastUsage = null;
         _unchangedCount = 0;
         _changedCount = 0;
-        _lowUsageFastMode = false;
         CurrentIntervalSeconds = DefaultSeconds;
     }
 
@@ -42,8 +40,7 @@ public sealed class DynamicQuotaRefreshScheduler
         if (_lastUsage is null)
         {
             _lastUsage = usage;
-            _lowUsageFastMode = IsLowPrimaryUsage(usage);
-            CurrentIntervalSeconds = DefaultIntervalSeconds();
+            CurrentIntervalSeconds = DefaultSeconds;
             return;
         }
 
@@ -56,26 +53,15 @@ public sealed class DynamicQuotaRefreshScheduler
                 ? SlowestSeconds
                 : _unchangedCount >= 3
                     ? SlowSeconds
-                    : DefaultIntervalSeconds();
+                    : DefaultSeconds;
             return;
         }
 
-        var previous = _lastUsage;
         _lastUsage = usage;
         _unchangedCount = 0;
         _changedCount++;
 
-        // The low-remaining rule is a one-update fast mode: use 1 minute until usage changes again.
-        if (_lowUsageFastMode)
-        {
-            _lowUsageFastMode = false;
-        }
-        else if (previous.PrimaryRemaining >= 30.0 && usage.PrimaryRemaining < 30.0)
-        {
-            _lowUsageFastMode = true;
-        }
-
-        CurrentIntervalSeconds = _changedCount >= 5 ? FastSeconds : DefaultIntervalSeconds();
+        CurrentIntervalSeconds = _changedCount >= 5 ? FastSeconds : DefaultSeconds;
     }
 
     /// <summary>
@@ -90,16 +76,6 @@ public sealed class DynamicQuotaRefreshScheduler
     }
 
     /// <summary>
-    /// Returns the current default interval, including the temporary low-remaining fast mode.
-    /// </summary>
-    private int DefaultIntervalSeconds() => _lowUsageFastMode ? FastSeconds : DefaultSeconds;
-
-    /// <summary>
-    /// Checks whether the 5H remaining quota is below the 30% fast-refresh threshold.
-    /// </summary>
-    private static bool IsLowPrimaryUsage(UsageSignature usage) => usage.PrimaryRemaining < 30.0;
-
-    /// <summary>
     /// Finds the nearest future reset timestamp from the quota windows.
     /// </summary>
     private static DateTimeOffset? NextResetAt(QuotaSnapshot? snapshot, DateTimeOffset now)
@@ -110,7 +86,7 @@ public sealed class DynamicQuotaRefreshScheduler
         }
 
         DateTimeOffset? next = null;
-        foreach (var resetsAt in new[] { snapshot?.Primary?.ResetsAt, snapshot?.Secondary?.ResetsAt })
+        foreach (var resetsAt in new[] { snapshot?.Secondary?.ResetsAt })
         {
             if (!resetsAt.HasValue)
             {
@@ -132,9 +108,6 @@ public sealed class DynamicQuotaRefreshScheduler
     }
 
     private sealed record UsageSignature(
-        double PrimaryUsed,
-        double PrimaryRemaining,
-        long? PrimaryResetsAt,
         double SecondaryUsed,
         double SecondaryRemaining,
         long? SecondaryResetsAt,
@@ -145,9 +118,6 @@ public sealed class DynamicQuotaRefreshScheduler
         /// Builds the comparable usage signature used to decide whether usage changed.
         /// </summary>
         public static UsageSignature From(QuotaSnapshot snapshot) => new(
-            Normalize(snapshot.Primary?.UsedPercent),
-            Normalize(snapshot.Primary?.RemainingPercent),
-            snapshot.Primary?.ResetsAt,
             Normalize(snapshot.Secondary?.UsedPercent),
             Normalize(snapshot.Secondary?.RemainingPercent),
             snapshot.Secondary?.ResetsAt,

@@ -150,7 +150,6 @@ public partial class App : System.Windows.Application
                 quota.LimitId,
                 quota.LimitName,
                 quota.PlanType,
-                primary = quota.Primary,
                 secondary = quota.Secondary,
                 quota.RateLimitReachedType
             }

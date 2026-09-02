@@ -14,7 +14,6 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _tickTimer = new();
     private readonly DispatcherTimer _topmostTimer = new();
     private readonly DispatcherTimer _placementTimer = new();
-    private readonly MetricGaugeBlock _quota5h;
     private readonly MetricGaugeBlock _quotaWeek;
     private readonly RefreshStatusBlock _refreshStatus;
     private readonly Forms.ContextMenuStrip _menu = new();
@@ -45,10 +44,8 @@ public partial class MainWindow : Window
 
         RootGrid.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition());
         RootGrid.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition());
-        RootGrid.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition());
-        _quota5h = AddGaugeBlock("5H", "#111A26", 0);
-        _quotaWeek = AddGaugeBlock("WK", "#141F2D", 1);
-        _refreshStatus = AddRefreshBlock("#111A26", 2);
+        _quotaWeek = AddGaugeBlock("WK", "#141F2D", 0);
+        _refreshStatus = AddRefreshBlock("#111A26", 1);
 
         BuildMenu();
         SetupTray();
@@ -295,20 +292,16 @@ public partial class MainWindow : Window
     {
         if (_lastQuota is null)
         {
-            _quota5h.SetMetric(null, "Quota wait", _settings);
             _quotaWeek.SetMetric(null, "Quota wait", _settings);
             return;
         }
-        if (_lastQuota.Error is not null && _lastQuota.Primary is null)
+        if (_lastQuota.Error is not null && _lastQuota.Secondary is null)
         {
-            _quota5h.SetMetric(null, "unavail", _settings);
-            _quotaWeek.SetMetric(null, "refresh", _settings);
+            _quotaWeek.SetMetric(null, "unavail", _settings);
             return;
         }
 
-        var primary = _lastQuota.Primary ?? new LimitWindow("5h");
         var secondary = _lastQuota.Secondary ?? new LimitWindow("Week");
-        _quota5h.SetMetric(primary.RemainingPercent, Formatting.Countdown(primary.ResetsAt), _settings);
         _quotaWeek.SetMetric(secondary.RemainingPercent, Formatting.Countdown(secondary.ResetsAt), _settings);
     }
 

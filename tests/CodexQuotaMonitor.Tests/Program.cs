@@ -4,6 +4,7 @@ using CodexQuotaMonitor.Wpf;
 var tests = new (string Name, Action Body)[]
 {
     ("quota JSON-RPC response parsing", TestQuotaParsing),
+    ("weekly quota parsing from legacy secondary field", TestLegacyWeeklyQuotaParsing),
     ("context usage row parsing", TestContextParsing),
     ("settings defaults, JSON load, CLI override, corrupt fallback", TestSettings),
     ("dynamic quota refresh scheduler", TestDynamicQuotaRefreshScheduler),
@@ -40,9 +41,29 @@ static void TestQuotaParsing()
             "limitName": "Test Limit",
             "planType": "plus",
             "primary": {
-              "usedPercent": 57.25,
-              "windowDurationMins": 300,
+              "usedPercent": 6,
+              "windowDurationMins": 10080,
               "resetsAt": 4102444800
+            },
+            "secondary": null
+          }
+        }
+        """);
+
+    var snapshot = QuotaReader.ParseRateLimitResult(document.RootElement);
+    Equal(null, snapshot.Error, "quota error");
+    Equal("test-limit", snapshot.LimitId, "limit id");
+    Near(94.0, snapshot.Secondary!.RemainingPercent!.Value, 0.001, "weekly remaining");
+}
+
+static void TestLegacyWeeklyQuotaParsing()
+{
+    using var document = JsonDocument.Parse("""
+        {
+          "rateLimits": {
+            "primary": {
+              "usedPercent": 57.25,
+              "windowDurationMins": 300
             },
             "secondary": {
               "usedPercent": 21,
@@ -54,10 +75,7 @@ static void TestQuotaParsing()
         """);
 
     var snapshot = QuotaReader.ParseRateLimitResult(document.RootElement);
-    Equal(null, snapshot.Error, "quota error");
-    Equal("test-limit", snapshot.LimitId, "limit id");
-    Near(42.75, snapshot.Primary!.RemainingPercent!.Value, 0.001, "primary remaining");
-    Near(79.0, snapshot.Secondary!.RemainingPercent!.Value, 0.001, "secondary remaining");
+    Near(79.0, snapshot.Secondary!.RemainingPercent!.Value, 0.001, "legacy weekly remaining");
 }
 
 static void TestContextParsing()
@@ -122,7 +140,7 @@ static void TestSettings()
 static void TestDynamicQuotaRefreshScheduler()
 {
     var scheduler = new DynamicQuotaRefreshScheduler();
-    var unchanged = Quota(40, 10);
+    var unchanged = Quota(10);
 
     scheduler.Register(unchanged);
     Equal(180, scheduler.CurrentIntervalSeconds, "initial dynamic interval");
@@ -138,25 +156,20 @@ static void TestDynamicQuotaRefreshScheduler()
     scheduler.Register(unchanged);
     Equal(600, scheduler.CurrentIntervalSeconds, "five unchanged interval");
 
-    scheduler.Register(Quota(41, 10));
+    scheduler.Register(Quota(11));
     Equal(180, scheduler.CurrentIntervalSeconds, "changed resets interval");
 
     for (var used = 42; used <= 46; used++)
     {
-        scheduler.Register(Quota(used, 10));
+        scheduler.Register(Quota(used));
     }
     Equal(60, scheduler.CurrentIntervalSeconds, "five changed interval");
 
-    scheduler.Reset();
-    scheduler.Register(Quota(80, 10));
-    Equal(60, scheduler.CurrentIntervalSeconds, "low primary remaining interval");
-
-    scheduler.Register(Quota(81, 10));
-    Equal(180, scheduler.CurrentIntervalSeconds, "low primary remaining restores after update");
-
     var now = DateTimeOffset.FromUnixTimeSeconds(4_102_444_000);
     var reset = now.AddMinutes(2);
-    var next = scheduler.NextRefreshAt(now, Quota(50, 20, reset.ToUnixTimeSeconds()));
+    scheduler.Reset();
+    scheduler.Register(Quota(20, reset.ToUnixTimeSeconds()));
+    var next = scheduler.NextRefreshAt(now, Quota(20, reset.ToUnixTimeSeconds()));
     Equal(reset.ToUniversalTime(), next.ToUniversalTime(), "reset time preempts interval");
 }
 
@@ -204,11 +217,10 @@ static void TestArguments()
     Equal(false, tray.NoTray, "tray override");
 }
 
-static QuotaSnapshot Quota(double primaryUsed, double secondaryUsed, long? primaryResetsAt = null)
+static QuotaSnapshot Quota(double secondaryUsed, long? secondaryResetsAt = null)
 {
     return new QuotaSnapshot(
-        Primary: new LimitWindow("5h", primaryUsed, 100.0 - primaryUsed, 300, primaryResetsAt),
-        Secondary: new LimitWindow("Week", secondaryUsed, 100.0 - secondaryUsed, 10080));
+        Secondary: new LimitWindow("Week", secondaryUsed, 100.0 - secondaryUsed, 10080, secondaryResetsAt));
 }
 
 static void Equal<T>(T expected, T actual, string label)

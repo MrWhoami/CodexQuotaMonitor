@@ -11,7 +11,6 @@ public sealed record QuotaSnapshot(
     string? LimitId = null,
     string? LimitName = null,
     string? PlanType = null,
-    LimitWindow? Primary = null,
     LimitWindow? Secondary = null,
     string? RateLimitReachedType = null,
     DateTimeOffset? UpdatedAt = null,

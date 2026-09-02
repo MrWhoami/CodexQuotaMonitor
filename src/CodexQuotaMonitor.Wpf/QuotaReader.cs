@@ -54,8 +54,7 @@ public sealed class QuotaReader
             LimitId: GetString(rateLimits, "limitId"),
             LimitName: GetString(rateLimits, "limitName"),
             PlanType: GetString(rateLimits, "planType"),
-            Primary: ParseWindow("5h", GetProperty(rateLimits, "primary")),
-            Secondary: ParseWindow("Week", GetProperty(rateLimits, "secondary")),
+            Secondary: ParseWeekWindow(rateLimits),
             RateLimitReachedType: GetString(rateLimits, "rateLimitReachedType"),
             UpdatedAt: DateTimeOffset.Now);
     }
@@ -229,6 +228,22 @@ public sealed class QuotaReader
             remaining,
             GetInt(element.Value, "windowDurationMins"),
             GetLong(element.Value, "resetsAt"));
+    }
+
+    private static LimitWindow ParseWeekWindow(JsonElement rateLimits)
+    {
+        foreach (var name in new[] { "primary", "secondary" })
+        {
+            var window = GetProperty(rateLimits, name);
+            if (window.HasValue &&
+                window.Value.ValueKind == JsonValueKind.Object &&
+                GetInt(window.Value, "windowDurationMins") == 10080)
+            {
+                return ParseWindow("Week", window);
+            }
+        }
+
+        return new LimitWindow("Week");
     }
 
     private static JsonElement? GetProperty(JsonElement element, string name)
